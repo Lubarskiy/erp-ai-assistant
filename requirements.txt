@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg[binary]
+alembic
+pydantic-settings
+httpx
+pyjwt
+pgvector
+apscheduler
+jinja2
+pytest
+ruff
+black
+mypy

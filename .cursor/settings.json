@@ -1,0 +1,10 @@
+{
+  "model": "gpt-4.1",
+  "autoRun": false,
+  "contextFiles": [
+    "docs/architecture.md",
+    "docs/onec_integration.md",
+    "docs/prompts/system_prompt.md"
+  ],
+  "maxTokens": 32000
+}

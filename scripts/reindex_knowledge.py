@@ -1,0 +1,1 @@
+print("Reindex knowledge stub")
