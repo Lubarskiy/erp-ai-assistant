@@ -8,6 +8,7 @@ class AnalyticsSummary(BaseModel):
 
 class SalesSummaryTopProduct(BaseModel):
     product_id: int | None
+    product_name: str | None = None
     amount: float
 
 
