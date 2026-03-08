@@ -28,9 +28,9 @@ class ChatService:
         assistant_message = "AI response placeholder"
 
         if intent == "sales_summary":
-            today = date.today()
-            data = self.analytics_service.get_sales_summary(month=today.month, year=today.year)
-            assistant_message = self._format_sales_summary_text(data)
+            month, year, period_label = self._detect_sales_period(payload.text)
+            data = self.analytics_service.get_sales_summary(month=month, year=year)
+            assistant_message = self._format_sales_summary_text(data, period_label)
 
         self.repo.save_message(payload.session_id, "assistant", assistant_message, intent)
 
@@ -45,9 +45,9 @@ class ChatService:
         items = self.repo.get_history(session_id)
         return ChatHistoryResponse(session_id=session_id, items=items)
 
-    def _format_sales_summary_text(self, data: dict | None) -> str:
+    def _format_sales_summary_text(self, data: dict | None, period_label: str) -> str:
         if not data:
-            return "Продажи за текущий месяц отсутствуют — данных за период нет."
+            return f"Продажи {period_label} отсутствуют — данных за период нет."
 
         def _fmt_amount(value: float | int | None) -> str:
             amount = float(value or 0)
@@ -57,7 +57,7 @@ class ChatService:
         top_products = data.get("top_products") or []
 
         if not top_products:
-            return f"Продажи за текущий месяц составили {total_sales}. Данных по отдельным товарам за период нет."
+            return f"Продажи {period_label} составили {total_sales}. Данных по отдельным товарам за период нет."
 
         parts: list[str] = []
         for item in top_products[:3]:
@@ -66,4 +66,19 @@ class ChatService:
             parts.append(f"{name} — {amount}")
 
         leaders = ", ".join(parts)
-        return f"Продажи за текущий месяц составили {total_sales}. Лидеры: {leaders}."
+        return f"Продажи {period_label} составили {total_sales}. Лидеры: {leaders}."
+
+    def _detect_sales_period(self, text: str) -> tuple[int, int, str]:
+        today = date.today()
+        lowered = text.lower()
+
+        if "за январь" in lowered:
+            return 1, today.year, "за январь"
+        if "за февраль" in lowered:
+            return 2, today.year, "за февраль"
+        if "за март" in lowered:
+            return 3, today.year, "за март"
+        if "за этот месяц" in lowered or "за текущий месяц" in lowered:
+            return today.month, today.year, "за текущий месяц"
+
+        return today.month, today.year, "за текущий месяц"

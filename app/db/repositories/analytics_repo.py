@@ -19,11 +19,12 @@ class AnalyticsRepository:
         else:
             end = date(year, month + 1, 1)
 
-        total_sales = (
+        total_sales_raw = (
             self.db.query(func.coalesce(func.sum(SalesFact.amount), 0))
             .filter(SalesFact.sale_date >= start, SalesFact.sale_date < end)
             .scalar()
         )
+        total_sales = round(float(total_sales_raw or 0), 2)
 
         top_rows = (
             self.db.query(
@@ -39,16 +40,18 @@ class AnalyticsRepository:
             .all()
         )
 
-        top_products = [
-            {
-                "product_id": row.product_id,
-                "product_name": row.product_name,
-                "amount": float(row.amount or 0),
-            }
-            for row in top_rows
-        ]
+        top_products: list[dict] = []
+        for row in top_rows:
+            amount_value = round(float(row.amount or 0), 2)
+            top_products.append(
+                {
+                    "product_id": row.product_id,
+                    "product_name": row.product_name,
+                    "amount": amount_value,
+                }
+            )
 
-        return {"total_sales": float(total_sales or 0), "top_products": top_products}
+        return {"total_sales": total_sales, "top_products": top_products}
 
     def stock_balance(self):
         rows = self.db.query(
