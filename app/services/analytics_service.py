@@ -5,8 +5,8 @@ class AnalyticsService:
     def __init__(self, db: Session):
         self.repo = AnalyticsRepository(db)
 
-    def get_sales_summary(self):
-        return self.repo.sales_summary()
+    def get_sales_summary(self, month: int, year: int) -> dict:
+        return self.repo.sales_summary(month=month, year=year)
 
     def get_stock_balance(self):
         return self.repo.stock_balance()
