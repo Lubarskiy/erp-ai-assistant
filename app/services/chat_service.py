@@ -30,7 +30,7 @@ class ChatService:
         if intent == "sales_summary":
             today = date.today()
             data = self.analytics_service.get_sales_summary(month=today.month, year=today.year)
-            assistant_message = "Сводка по продажам подготовлена."
+            assistant_message = self._format_sales_summary_text(data)
 
         self.repo.save_message(payload.session_id, "assistant", assistant_message, intent)
 
@@ -44,3 +44,26 @@ class ChatService:
     def get_history(self, session_id: int) -> ChatHistoryResponse:
         items = self.repo.get_history(session_id)
         return ChatHistoryResponse(session_id=session_id, items=items)
+
+    def _format_sales_summary_text(self, data: dict | None) -> str:
+        if not data:
+            return "Продажи за текущий месяц отсутствуют — данных за период нет."
+
+        def _fmt_amount(value: float | int | None) -> str:
+            amount = float(value or 0)
+            return f"{amount:,.2f}".replace(",", " ")
+
+        total_sales = _fmt_amount(data.get("total_sales"))
+        top_products = data.get("top_products") or []
+
+        if not top_products:
+            return f"Продажи за текущий месяц составили {total_sales}. Данных по отдельным товарам за период нет."
+
+        parts: list[str] = []
+        for item in top_products[:3]:
+            name = item.get("product_name") or f"Товар {item.get('product_id')}"
+            amount = _fmt_amount(item.get("amount"))
+            parts.append(f"{name} — {amount}")
+
+        leaders = ", ".join(parts)
+        return f"Продажи за текущий месяц составили {total_sales}. Лидеры: {leaders}."
