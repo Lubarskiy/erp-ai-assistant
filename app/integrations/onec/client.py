@@ -1,5 +1,6 @@
 from app.integrations.onec.odata_client import ODataClient
 from app.integrations.onec.http_service_client import HTTPServiceClient
+from app.integrations.onec.mappers import map_stock_balance
 
 
 class OneCIntegrationError(Exception):
@@ -38,15 +39,35 @@ class OneCClient:
         raise UnsupportedIntentError(intent)
 
     def fetch_stock_balance(self, product_code: str | None):
-        return {
-            "status": "stub",
-            "intent": "stock_balance",
-            "data": {
-                "product_code": product_code,
-                "available_quantity": 0.0,
-                "source": "onec_live_disabled",
-            },
-        }
+        if not product_code:
+            return {
+                "status": "stub",
+                "intent": "stock_balance",
+                "data": {
+                    "product_code": None,
+                    "available_quantity": 0.0,
+                    "source": "onec_live_disabled",
+                },
+            }
+
+        try:
+            raw = self.http.get("/stock-balance", params={"product_code": product_code})
+            mapped = map_stock_balance(raw)
+            return {
+                "status": "live",
+                "intent": "stock_balance",
+                "data": mapped,
+            }
+        except Exception:
+            return {
+                "status": "stub",
+                "intent": "stock_balance",
+                "data": {
+                    "product_code": product_code,
+                    "available_quantity": 0.0,
+                    "source": "onec_live_disabled",
+                },
+            }
 
     def fetch_customer_card(
         self,

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+import httpx
+
 from app.config import settings
 from app.integrations.onec.queries import ALLOWED_ENDPOINTS
 
@@ -13,32 +15,46 @@ class HTTPServiceClient:
         self.max_retries = max_retries
 
     def _validate_path(self, path: str) -> None:
+        from app.integrations.onec.client import OneCIntegrationError
+
         if path not in ALLOWED_ENDPOINTS:
-            raise ValueError(f"Path '{path}' is not allowed for 1C HTTP service")
+            raise OneCIntegrationError(f"Path '{path}' is not allowed for 1C HTTP service")
 
     def _request(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        # Здесь в будущем будет реальный вызов httpx с таймаутом и ретраями.
-        # Сейчас безопасный stub-ответ без обращения к 1С.
+        from app.integrations.onec.client import OneCIntegrationError
+
+        url = f"{self.base_url}{path}"
         attempt = 0
+        last_error: Exception | None = None
+
         while attempt <= self.max_retries:
             attempt += 1
-            return {
-                "status": "stub",
-                "source": "onec_http_service",
-                "reason": "live 1C calls disabled",
-                "base_url": self.base_url,
-                "path": path,
-                "params": params or {},
-                "attempt": attempt,
-            }
-        # Теоретически сюда не дойдём, но оставляем на будущее.
-        return {
-            "status": "error",
-            "source": "onec_http_service",
-            "reason": "unexpected_retry_flow",
-            "path": path,
-            "params": params or {},
-        }
+            try:
+                resp = httpx.get(
+                    url,
+                    params=params,
+                    timeout=self.timeout,
+                    auth=(settings.onec_username, settings.onec_password),
+                )
+                if resp.status_code != 200:
+                    raise OneCIntegrationError(
+                        f"1C HTTP service responded with status {resp.status_code}"
+                    )
+                try:
+                    data = resp.json()
+                except ValueError as exc:  # JSON decode error
+                    raise OneCIntegrationError(
+                        "Failed to decode 1C HTTP service response as JSON"
+                    ) from exc
+                if not isinstance(data, dict):
+                    raise OneCIntegrationError("Unexpected 1C HTTP service payload type")
+                return data
+            except (httpx.HTTPError, OneCIntegrationError) as exc:
+                last_error = exc
+                break
+
+        message = str(last_error) if last_error else "Unknown HTTP error"
+        raise OneCIntegrationError(f"1C HTTP service request failed: {message}")
 
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         self._validate_path(path)

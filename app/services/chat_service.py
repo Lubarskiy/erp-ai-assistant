@@ -68,16 +68,24 @@ class ChatService:
                     "stock_balance",
                     {"product_code": product_code},
                 )
-                if product_code:
+                if data and data.get("status") == "live" and data.get("data"):
+                    info = data["data"]
+                    code = info.get("product_code") or product_code
+                    qty = info.get("available_quantity")
                     assistant_message = (
-                        f"Онлайн-запрос остатков по товару {product_code} "
-                        f"выполняется в режиме заглушки, данные 1С сейчас недоступны."
+                        f"По товару {code} в 1С найден остаток {qty} единиц."
                     )
                 else:
-                    assistant_message = (
-                        "Онлайн-запрос остатков выполняется в режиме заглушки, "
-                        "код товара не указан."
-                    )
+                    if product_code:
+                        assistant_message = (
+                            f"Онлайн-запрос остатков по товару {product_code} "
+                            f"выполняется в режиме заглушки, данные 1С сейчас недоступны."
+                        )
+                    else:
+                        assistant_message = (
+                            "Онлайн-запрос остатков выполняется в режиме заглушки, "
+                            "код товара не указан."
+                        )
             elif intent == "customer_info":
                 customer_name = self._extract_customer_name(payload.text)
                 data = self.onec_client.fetch_live(
