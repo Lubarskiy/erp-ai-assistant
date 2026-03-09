@@ -6,3 +6,7 @@ class KnowledgeSearchRequest(BaseModel):
 class KnowledgeItem(BaseModel):
     title: str | None = None
     content: str
+
+
+class KnowledgeSearchResponse(BaseModel):
+    items: list[KnowledgeItem]
