@@ -1,13 +1,30 @@
 from app.core.enums import IntentEnum
 
+
 class IntentService:
     KEYWORDS = {
+        # сначала вопросы/регламенты
+        IntentEnum.knowledge_question: [
+            "как оформить",
+            "как сделать",
+            "как вернуть",
+            "регламент",
+            "инструкция",
+            "возврат",
+            "faq",
+        ],
         IntentEnum.sales_summary: ["продаж", "выручк", "sales"],
-        IntentEnum.top_products: ["топ", "best", "товар"],
+        # более точные маркеры для топов
+        IntentEnum.top_products: [
+            "топ",
+            "лидер",
+            "лучшие товар",
+            "самые продаваем",
+            "best seller",
+        ],
         IntentEnum.overdue_orders: ["просроч", "overdue", "заказ"],
         IntentEnum.stock_balance: ["остат", "balance", "склад"],
         IntentEnum.customer_info: ["контрагент", "customer", "клиент"],
-        IntentEnum.knowledge_question: ["как", "регламент", "инструкция", "faq"],
     }
 
     def detect(self, text: str) -> dict:

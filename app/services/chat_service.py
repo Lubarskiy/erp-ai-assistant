@@ -5,6 +5,7 @@ from app.db.repositories.chat_repo import ChatRepository
 from app.schemas.chat import ChatCreateSessionResponse, ChatHistoryResponse, ChatMessageRequest, ChatMessageResponse
 from app.services.analytics_service import AnalyticsService
 from app.services.intent_service import IntentService
+from app.services.rag_service import RagService
 
 
 class ChatService:
@@ -13,6 +14,7 @@ class ChatService:
         self.repo = ChatRepository(db)
         self.intent_service = IntentService()
         self.analytics_service = AnalyticsService(db)
+        self.rag_service = RagService(db)
 
     def create_session(self) -> ChatCreateSessionResponse:
         session = self.repo.create_session()
@@ -31,6 +33,32 @@ class ChatService:
             month, year, period_label = self._detect_sales_period(payload.text)
             data = self.analytics_service.get_sales_summary(month=month, year=year)
             assistant_message = self._format_sales_summary_text(data, period_label)
+        elif intent == "knowledge_question":
+            chunks = self.rag_service.search(payload.text, limit=3)
+            if chunks:
+                lines: list[str] = []
+                for chunk in chunks[:2]:
+                    title = (chunk.title or "").strip() or "Фрагмент"
+                    first_line = (chunk.content or "").strip().splitlines()[0] if (chunk.content or "").strip() else ""
+                    snippet = first_line.strip()
+                    if len(snippet) > 160:
+                        snippet = snippet[:157].rstrip() + "..."
+                    if snippet:
+                        lines.append(f"{title}: {snippet}")
+                    else:
+                        lines.append(title)
+
+                bullet_lines = "\n".join(f"- {line}" for line in lines)
+                assistant_message = f"Нашёл в базе знаний следующие материалы:\n{bullet_lines}"
+                data = {
+                    "items": [
+                        {"title": chunk.title, "content": chunk.content}
+                        for chunk in chunks
+                    ]
+                }
+            else:
+                assistant_message = "В базе знаний ничего не найдено по этому запросу."
+                data = {"items": []}
 
         self.repo.save_message(payload.session_id, "assistant", assistant_message, intent)
 
