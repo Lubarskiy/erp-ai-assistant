@@ -6,6 +6,7 @@ from app.integrations.onec.client import OneCClient, OneCIntegrationError
 from app.schemas.chat import ChatCreateSessionResponse, ChatHistoryResponse, ChatMessageRequest, ChatMessageResponse
 from app.services.analytics_service import AnalyticsService
 from app.services.intent_service import IntentService
+from app.services.llm_service import LLMService
 from app.services.rag_service import RagService
 
 
@@ -16,6 +17,7 @@ class ChatService:
         self.intent_service = IntentService()
         self.analytics_service = AnalyticsService(db)
         self.rag_service = RagService(db)
+        self.llm_service = LLMService()
         self.onec_client = OneCClient()
 
     def create_session(self) -> ChatCreateSessionResponse:
@@ -39,6 +41,15 @@ class ChatService:
             elif intent == "knowledge_question":
                 chunks = self.rag_service.search(payload.text, limit=3)
                 if chunks:
+                    # Готовим data в прежнем формате
+                    data = {
+                        "items": [
+                            {"title": chunk.title, "content": chunk.content}
+                            for chunk in chunks
+                        ]
+                    }
+
+                    # Fallback-краткое резюме по чанкам
                     lines: list[str] = []
                     for chunk in chunks[:2]:
                         title = (chunk.title or "").strip() or "Фрагмент"
@@ -50,15 +61,18 @@ class ChatService:
                             lines.append(f"{title}: {snippet}")
                         else:
                             lines.append(title)
-
                     bullet_lines = "\n".join(f"- {line}" for line in lines)
-                    assistant_message = f"Нашёл в базе знаний следующие материалы:\n{bullet_lines}"
-                    data = {
-                        "items": [
-                            {"title": chunk.title, "content": chunk.content}
-                            for chunk in chunks
-                        ]
-                    }
+                    fallback_summary = f"Нашёл в базе знаний следующие материалы:\n{bullet_lines}"
+
+                    # Собираем контекст для LLM
+                    context_parts: list[str] = []
+                    for chunk in chunks:
+                        title = (chunk.title or "").strip() or "Фрагмент"
+                        context_parts.append(f"### {title}\n{chunk.content}")
+                    context = "\n\n".join(context_parts)
+
+                    llm_answer = self.llm_service.answer_with_context(payload.text, context)
+                    assistant_message = llm_answer or fallback_summary
                 else:
                     assistant_message = "В базе знаний ничего не найдено по этому запросу."
                     data = {"items": []}
