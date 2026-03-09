@@ -2,6 +2,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.db.repositories.chat_repo import ChatRepository
+from app.integrations.onec.client import OneCClient, OneCIntegrationError
 from app.schemas.chat import ChatCreateSessionResponse, ChatHistoryResponse, ChatMessageRequest, ChatMessageResponse
 from app.services.analytics_service import AnalyticsService
 from app.services.intent_service import IntentService
@@ -15,6 +16,7 @@ class ChatService:
         self.intent_service = IntentService()
         self.analytics_service = AnalyticsService(db)
         self.rag_service = RagService(db)
+        self.onec_client = OneCClient()
 
     def create_session(self) -> ChatCreateSessionResponse:
         session = self.repo.create_session()
@@ -29,36 +31,79 @@ class ChatService:
         data = None
         assistant_message = "AI response placeholder"
 
-        if intent == "sales_summary":
-            month, year, period_label = self._detect_sales_period(payload.text)
-            data = self.analytics_service.get_sales_summary(month=month, year=year)
-            assistant_message = self._format_sales_summary_text(data, period_label)
-        elif intent == "knowledge_question":
-            chunks = self.rag_service.search(payload.text, limit=3)
-            if chunks:
-                lines: list[str] = []
-                for chunk in chunks[:2]:
-                    title = (chunk.title or "").strip() or "Фрагмент"
-                    first_line = (chunk.content or "").strip().splitlines()[0] if (chunk.content or "").strip() else ""
-                    snippet = first_line.strip()
-                    if len(snippet) > 160:
-                        snippet = snippet[:157].rstrip() + "..."
-                    if snippet:
-                        lines.append(f"{title}: {snippet}")
-                    else:
-                        lines.append(title)
+        try:
+            if intent == "sales_summary":
+                month, year, period_label = self._detect_sales_period(payload.text)
+                data = self.analytics_service.get_sales_summary(month=month, year=year)
+                assistant_message = self._format_sales_summary_text(data, period_label)
+            elif intent == "knowledge_question":
+                chunks = self.rag_service.search(payload.text, limit=3)
+                if chunks:
+                    lines: list[str] = []
+                    for chunk in chunks[:2]:
+                        title = (chunk.title or "").strip() or "Фрагмент"
+                        first_line = (chunk.content or "").strip().splitlines()[0] if (chunk.content or "").strip() else ""
+                        snippet = first_line.strip()
+                        if len(snippet) > 160:
+                            snippet = snippet[:157].rstrip() + "..."
+                        if snippet:
+                            lines.append(f"{title}: {snippet}")
+                        else:
+                            lines.append(title)
 
-                bullet_lines = "\n".join(f"- {line}" for line in lines)
-                assistant_message = f"Нашёл в базе знаний следующие материалы:\n{bullet_lines}"
-                data = {
-                    "items": [
-                        {"title": chunk.title, "content": chunk.content}
-                        for chunk in chunks
-                    ]
-                }
-            else:
-                assistant_message = "В базе знаний ничего не найдено по этому запросу."
-                data = {"items": []}
+                    bullet_lines = "\n".join(f"- {line}" for line in lines)
+                    assistant_message = f"Нашёл в базе знаний следующие материалы:\n{bullet_lines}"
+                    data = {
+                        "items": [
+                            {"title": chunk.title, "content": chunk.content}
+                            for chunk in chunks
+                        ]
+                    }
+                else:
+                    assistant_message = "В базе знаний ничего не найдено по этому запросу."
+                    data = {"items": []}
+            elif intent == "stock_balance":
+                product_code = self._extract_product_code(payload.text)
+                data = self.onec_client.fetch_live(
+                    "stock_balance",
+                    {"product_code": product_code},
+                )
+                if product_code:
+                    assistant_message = (
+                        f"Онлайн-запрос остатков по товару {product_code} "
+                        f"выполняется в режиме заглушки, данные 1С сейчас недоступны."
+                    )
+                else:
+                    assistant_message = (
+                        "Онлайн-запрос остатков выполняется в режиме заглушки, "
+                        "код товара не указан."
+                    )
+            elif intent == "customer_info":
+                customer_name = self._extract_customer_name(payload.text)
+                data = self.onec_client.fetch_live(
+                    "customer_info",
+                    {"customer_name": customer_name},
+                )
+                if customer_name:
+                    assistant_message = (
+                        f"Онлайн-запрос карточки клиента «{customer_name}» выполняется "
+                        f"в режиме заглушки, данные 1С сейчас недоступны."
+                    )
+                else:
+                    assistant_message = (
+                        "Онлайн-запрос карточки клиента выполняется в режиме заглушки, "
+                        "имя клиента не распознано."
+                    )
+        except OneCIntegrationError as exc:
+            assistant_message = (
+                "Во время обращения к онлайн-данным 1С произошла ошибка интеграции. "
+                "Сейчас используется офлайн-ответ."
+            )
+            data = {
+                "status": "error",
+                "source": "onec_integration",
+                "reason": str(exc),
+            }
 
         self.repo.save_message(payload.session_id, "assistant", assistant_message, intent)
 
@@ -110,3 +155,19 @@ class ChatService:
             return today.month, today.year, "за текущий месяц"
 
         return today.month, today.year, "за текущий месяц"
+
+    def _extract_product_code(self, text: str) -> str | None:
+        for raw in text.split():
+            token = raw.strip(",.;:!?'\"()[]{}")
+            if any(ch.isdigit() for ch in token):
+                return token
+        return None
+
+    def _extract_customer_name(self, text: str) -> str | None:
+        lowered = text.lower()
+        marker = "клиент"
+        idx = lowered.find(marker)
+        if idx == -1:
+            return None
+        after = text[idx + len(marker) :].strip()
+        return after or None

@@ -29,3 +29,15 @@ def test_detect_knowledge_question_regulation():
     svc = IntentService()
     result = svc.detect("регламент возврата")
     assert result["intent"] == "knowledge_question"
+
+
+def test_detect_stock_balance():
+    svc = IntentService()
+    result = svc.detect("остаток по товару A-123")
+    assert result["intent"] == "stock_balance"
+
+
+def test_detect_customer_info():
+    svc = IntentService()
+    result = svc.detect("покажи клиента Ромашка")
+    assert result["intent"] == "customer_info"
